@@ -33,7 +33,15 @@ Dân làng, Ma Sói, Tiên tri, Bảo vệ, Phù thủy, Thợ săn.
 
 ## Giọng đọc
 
-App dùng giọng đọc có sẵn trên máy (Web Speech API), không cần mạng.
+Lời dẫn cố định được thu sẵn bằng Edge TTS (giọng Hoài My và Nam Minh) trong `public/voice/`, nên đọc chuẩn
+và không cần mạng. Tên người chơi được đọc bằng Edge TTS qua `/api/tts` (lúc dev là Vite server, khi deploy Vercel là
+`api/tts.py`). Tên được tải ngay khi bắt đầu ván và lưu lại trên máy. Không có mạng, hoặc host không có `/api/tts`
+(ví dụ GitHub Pages), thì tên được đọc bằng giọng có sẵn trên máy (Web Speech API).
+
+Sửa lời dẫn trong `src/game/script.ts` xong thì chạy `npm run gen-voice` để thu lại các câu mới (cần `edge-tts`
+hoặc `uvx`). `npm test` báo lỗi nếu còn câu chưa được thu.
+
+Để tên người chơi được đọc đúng, máy cần có giọng tiếng Việt:
 
 - iPhone: Cài đặt → Trợ năng → Nội dung được đọc → Giọng nói → Tiếng Việt.
 - Android: cài "Dịch vụ lời nói của Google" và tải giọng Tiếng Việt.

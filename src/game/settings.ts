@@ -1,3 +1,5 @@
+import type { NarratorVoice } from '../tts/narrator'
+
 export interface Settings {
   /** Seconds everyone has to close their eyes before the first role is called. */
   nightIntroSeconds: number
@@ -12,6 +14,8 @@ export interface Settings {
   lastWordsSeconds: number
   /** Announce the role of everyone who dies. */
   revealRoleOnDeath: boolean
+  voice: NarratorVoice
+  /** Browser voice used for player names, and for everything when `voice` is "device". */
   voiceURI: string | null
   speechRate: number
   volume: number
@@ -26,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   voteSeconds: 30,
   lastWordsSeconds: 30,
   revealRoleOnDeath: false,
+  voice: 'HoaiMy',
   voiceURI: null,
   speechRate: 1,
   volume: 1,

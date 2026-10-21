@@ -1,14 +1,18 @@
 import { useState } from 'react'
 import { CONFIGURABLE_ROLES, ROLES, suggestRoles, validateSetup, type RoleCounts } from '../game/roles'
 import { loadNames, saveNames } from '../game/store'
+import type { NarratorVoice } from '../tts/narrator'
 import { Button, Screen } from './kit'
+import { MusicButton } from './music'
 import { NoVoiceWarning } from './SettingsSheet'
 
 export function Setup({
+  voice,
   onStart,
   onOpenSettings,
   resume,
 }: {
+  voice: NarratorVoice
   onStart: (names: string[], counts: RoleCounts) => void
   onOpenSettings: () => void
   resume?: { onResume: () => void; onDiscard: () => void }
@@ -48,9 +52,12 @@ export function Setup({
           <h1 className="text-2xl font-extrabold">🌕 Ma Sói</h1>
           <p className="text-sm text-muted">Quản trò tự động – ai cũng được chơi</p>
         </div>
-        <button onClick={onOpenSettings} className="rounded-full bg-panel px-4 py-2 text-xl" aria-label="Cài đặt">
-          ⚙️
-        </button>
+        <div className="flex gap-2">
+          <MusicButton className="text-xl" />
+          <button onClick={onOpenSettings} className="rounded-full bg-panel px-4 py-2 text-xl" aria-label="Cài đặt">
+            ⚙️
+          </button>
+        </div>
       </header>
 
       {resume && (
@@ -67,7 +74,7 @@ export function Setup({
         </div>
       )}
 
-      <NoVoiceWarning />
+      <NoVoiceWarning voice={voice} />
 
       <section className="flex flex-col gap-3">
         <h2 className="font-bold">Người chơi ({names.length})</h2>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createGame, type GameState } from './game/engine'
 import { loadSettings, saveSettings, type Settings } from './game/settings'
 import { useGameStore } from './game/store'
-import { configureVoice, stopSpeaking } from './tts/narrator'
+import { configureVoice, prefetchNames, stopSpeaking } from './tts/narrator'
 import { Deal } from './ui/Deal'
 import { Play } from './ui/Play'
 import { SettingsSheet } from './ui/SettingsSheet'
@@ -17,8 +17,11 @@ export function App() {
 
   useEffect(() => {
     saveSettings(settings)
-    configureVoice({ voiceURI: settings.voiceURI, rate: settings.speechRate, volume: settings.volume })
+    configureVoice({ voice: settings.voice, voiceURI: settings.voiceURI, rate: settings.speechRate, volume: settings.volume })
   }, [settings])
+
+  const playerNames = store.game?.players.map((p) => p.name).join('\n') ?? ''
+  useEffect(() => prefetchNames(playerNames ? playerNames.split('\n') : []), [playerNames, settings.voice])
 
   const apply = useCallback((fn: (s: GameState) => GameState) => dispatch({ type: 'apply', fn }), [dispatch])
   const exit = useCallback(() => {
@@ -38,6 +41,7 @@ export function App() {
     return (
       <>
         <Setup
+          voice={settings.voice}
           onOpenSettings={() => setShowSettings(true)}
           onStart={(names, counts) => {
             dispatch({ type: 'new', game: createGame(names, counts) })

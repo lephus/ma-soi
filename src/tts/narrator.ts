@@ -1,12 +1,23 @@
 /**
- * Speaks Vietnamese lines with the browser's built-in speech engine and provides
- * pause-aware waiting, so the whole game can be paused from one button.
+ * Speaks Vietnamese lines and provides pause-aware waiting, so the whole game can be paused
+ * from one button. Fixed wording plays clips recorded with Edge TTS (`npm run gen-voice`) and
+ * player names are fetched from /api/tts. The browser's speech engine is the fallback, and reads
+ * everything when the "device" voice is chosen.
  */
 
-export interface VoiceOption {
-  uri: string
-  label: string
-}
+import { lineParts, lineText, phraseKey, type Line } from '../game/script'
+import clips from './clips.json'
+import { nameClip } from './nameClips'
+
+export type NarratorVoice = 'HoaiMy' | 'NamMinh' | 'device'
+
+export const NARRATOR_VOICES: { id: NarratorVoice; label: string }[] = [
+  { id: 'HoaiMy', label: 'Hoài My (nữ)' },
+  { id: 'NamMinh', label: 'Nam Minh (nam)' },
+  { id: 'device', label: 'Giọng có sẵn trên máy' },
+]
+
+const clipFiles: Record<string, string> = clips.files
 
 type Listener = () => void
 
@@ -18,7 +29,7 @@ class PauseGate {
   set(paused: boolean) {
     if (this.paused === paused) return
     this.paused = paused
-    if (paused) synth?.cancel()
+    if (paused) stopSpeaking()
     else this.waiters.splice(0).forEach((w) => w())
     this.listeners.forEach((l) => l())
   }
@@ -51,12 +62,14 @@ export function onVoicesChanged(cb: Listener): () => void {
 }
 
 interface VoiceConfig {
+  voice: NarratorVoice
+  /** Browser voice for names, and for everything when `voice` is "device". */
   voiceURI: string | null
   rate: number
   volume: number
 }
 
-let config: VoiceConfig = { voiceURI: null, rate: 1, volume: 1 }
+let config: VoiceConfig = { voice: 'HoaiMy', voiceURI: null, rate: 1, volume: 1 }
 
 export function configureVoice(next: VoiceConfig) {
   config = next
@@ -94,7 +107,67 @@ export async function wait(ms: number, signal: AbortSignal): Promise<void> {
 /** Some engines (notably Safari) occasionally never fire `end`; never wait longer than this. */
 const estimateMs = (text: string) => 2500 + (text.length * 110) / config.rate
 
-function speakOnce(text: string, signal: AbortSignal): Promise<'done' | 'interrupted'> {
+type Result = 'done' | 'interrupted' | 'failed'
+
+const player: HTMLAudioElement | undefined = typeof Audio !== 'undefined' ? new Audio() : undefined
+let interruptClip: (() => void) | undefined
+/** Bumped on every play so a stale unlock never pauses a real clip. */
+let playToken = 0
+
+const clipUrl = (file: string) => `${import.meta.env.BASE_URL}voice/${config.voice}/${file}.mp3`
+
+/** Starts fetching name clips so they are ready (and cached for offline) before they are needed. */
+export function prefetchNames(names: string[]) {
+  if (config.voice !== 'device') names.forEach((n) => void nameClip(config.voice, n.trim()))
+}
+
+function playClip(url: string, text: string, signal: AbortSignal): Promise<Result> {
+  return new Promise((resolve) => {
+    if (!player) return resolve('failed')
+    playToken++
+    let settled = false
+    const finish = (r: Result) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      player.onended = player.onerror = null
+      interruptClip = undefined
+      signal.removeEventListener('abort', onAbort)
+      resolve(r)
+    }
+    const onAbort = () => {
+      player.pause()
+      finish('interrupted')
+    }
+    const timer = setTimeout(() => finish('done'), estimateMs(text))
+    interruptClip = onAbort
+    player.onended = () => finish(pauseGate.paused ? 'interrupted' : 'done')
+    player.onerror = () => finish('failed')
+    signal.addEventListener('abort', onAbort)
+    player.muted = false
+    player.src = url
+    player.defaultPlaybackRate = player.playbackRate = config.rate
+    player.volume = config.volume
+    player.play().catch(() => finish(pauseGate.paused || signal.aborted ? 'interrupted' : 'failed'))
+  })
+}
+
+async function speakOnce(line: Line, signal: AbortSignal): Promise<Result> {
+  if (config.voice === 'device') return speakText(lineText(line), signal)
+  for (const part of lineParts(line)) {
+    const key = phraseKey(part)
+    if (!key) continue
+    const file = clipFiles[key]
+    const url = file ? clipUrl(file) : await nameClip(config.voice, key)
+    throwIfAborted(signal)
+    let result: Result = url ? await playClip(url, key, signal) : 'failed'
+    if (result === 'failed') result = await speakText(key, signal)
+    if (result === 'interrupted') return result
+  }
+  return 'done'
+}
+
+function speakText(text: string, signal: AbortSignal): Promise<Result> {
   return new Promise((resolve) => {
     if (!synth) {
       setTimeout(() => resolve('done'), estimateMs(text) * 0.6)
@@ -127,19 +200,19 @@ function speakOnce(text: string, signal: AbortSignal): Promise<'done' | 'interru
 }
 
 /** Speaks one line; if the game is paused mid-sentence the line is repeated after resuming. */
-export async function speak(text: string, signal: AbortSignal): Promise<void> {
+export async function speak(line: Line, signal: AbortSignal): Promise<void> {
   for (;;) {
     await pauseGate.whenResumed()
     throwIfAborted(signal)
-    const result = await speakOnce(text, signal)
+    const result = await speakOnce(line, signal)
     throwIfAborted(signal)
-    if (result === 'done' && !pauseGate.paused) return
+    if (result !== 'interrupted' && !pauseGate.paused) return
   }
 }
 
-export async function speakAll(lines: string[], signal: AbortSignal, onLine?: (line: string) => void) {
+export async function speakAll(lines: Line[], signal: AbortSignal, onLine?: (text: string) => void) {
   for (const line of lines) {
-    onLine?.(line)
+    onLine?.(lineText(line))
     await speak(line, signal)
     await wait(350, signal)
   }
@@ -147,9 +220,13 @@ export async function speakAll(lines: string[], signal: AbortSignal, onLine?: (l
 
 export function stopSpeaking() {
   synth?.cancel()
+  interruptClip?.()
 }
 
 let audio: AudioContext | undefined
+
+/** A few milliseconds of silence, played on a tap so iOS lets the clip player start later on its own. */
+const SILENCE = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQQAAACAgICA'
 
 /** iOS only allows speech and sound after a tap; call this from a click handler. */
 export function unlockAudio() {
@@ -157,6 +234,15 @@ export function unlockAudio() {
     const u = new SpeechSynthesisUtterance(' ')
     u.volume = 0
     synth.speak(u)
+  }
+  if (player && !interruptClip) {
+    const token = ++playToken
+    player.muted = true
+    player.src = SILENCE
+    player
+      .play()
+      .then(() => token === playToken && player.pause())
+      .catch(() => {})
   }
   try {
     audio ??= new AudioContext()

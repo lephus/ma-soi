@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { timerWarning } from '../game/script'
+import { timerWarning, type Line } from '../game/script'
 import { Aborted, pauseGate, speakAll, wait } from '../tts/narrator'
 
 export function usePaused(): boolean {
@@ -11,7 +11,7 @@ export function usePaused(): boolean {
 
 export interface RunContext {
   signal: AbortSignal
-  say: (lines: string[]) => Promise<void>
+  say: (lines: Line[]) => Promise<void>
   wait: (seconds: number) => Promise<void>
 }
 

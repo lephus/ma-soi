@@ -306,7 +306,7 @@ function Timer({ label, countdown }: { label: string; countdown: Countdown }) {
 }
 
 /** Runs intro lines, a countdown with spoken reminders, then the outro; resolves when all is said. */
-function useTimedStep(seconds: number, intro: string[], outro: string[], then: () => void) {
+function useTimedStep(seconds: number, intro: script.Line[], outro: script.Line[], then: () => void) {
   const signal = useUnmountSignal()
   const step = useUserStep()
   const countdown = useCountdown(seconds, step.done, (warning) => void speak(warning, signal).catch(() => {}))

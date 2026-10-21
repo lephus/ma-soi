@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
 import { DEFAULT_SETTINGS, type Settings } from '../game/settings'
-import { onVoicesChanged, speak, speechSupported, unlockAudio, vietnameseVoices } from '../tts/narrator'
+import {
+  NARRATOR_VOICES,
+  onVoicesChanged,
+  speak,
+  speechSupported,
+  unlockAudio,
+  vietnameseVoices,
+  type NarratorVoice,
+} from '../tts/narrator'
 import { Button, NumberField, Sheet } from './kit'
 
 export function useVietnameseVoices() {
@@ -9,9 +17,17 @@ export function useVietnameseVoices() {
   return voices
 }
 
-export function NoVoiceWarning() {
+export function NoVoiceWarning({ voice }: { voice: NarratorVoice }) {
   const voices = useVietnameseVoices()
   if (voices.length > 0) return null
+  if (voice !== 'device') {
+    return (
+      <p className="rounded-2xl border border-line bg-panel/70 px-4 py-3 text-xs text-muted">
+        Máy này chưa có giọng đọc tiếng Việt. Khi không có mạng, tên người chơi có thể bị đọc sai. Lời dẫn vẫn đọc
+        bình thường.
+      </p>
+    )
+  }
   return (
     <div className="rounded-2xl border border-day/50 bg-day/10 p-4 text-sm">
       <p className="font-semibold text-day">
@@ -48,10 +64,24 @@ export function SettingsSheet({
     <Sheet title="Cài đặt" onClose={onClose}>
       <div className="flex flex-col gap-3">
         <h3 className="mt-1 text-sm font-semibold tracking-wider text-muted uppercase">Giọng đọc</h3>
-        <NoVoiceWarning />
+        <label className="flex flex-col gap-2 rounded-2xl bg-panel px-4 py-3">
+          <span className="font-semibold">Giọng</span>
+          <select
+            value={settings.voice}
+            onChange={(e) => set('voice', e.target.value as NarratorVoice)}
+            className="rounded-xl border border-line bg-night px-3 py-2"
+          >
+            {NARRATOR_VOICES.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <NoVoiceWarning voice={settings.voice} />
         {voices.length > 0 && (
           <label className="flex flex-col gap-2 rounded-2xl bg-panel px-4 py-3">
-            <span className="font-semibold">Giọng</span>
+            <span className="font-semibold">{settings.voice === 'device' ? 'Giọng của máy' : 'Giọng đọc tên người chơi'}</span>
             <select
               value={settings.voiceURI ?? ''}
               onChange={(e) => set('voiceURI', e.target.value || null)}
@@ -118,7 +148,7 @@ export function SettingsSheet({
           />
         </label>
 
-        <Button variant="ghost" className="mt-3" onClick={() => onChange({ ...DEFAULT_SETTINGS, voiceURI: settings.voiceURI })}>
+        <Button variant="ghost" className="mt-3" onClick={() => onChange({ ...DEFAULT_SETTINGS, voice: settings.voice, voiceURI: settings.voiceURI })}>
           Khôi phục mặc định
         </Button>
       </div>

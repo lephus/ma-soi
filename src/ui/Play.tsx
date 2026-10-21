@@ -3,6 +3,7 @@ import { setAlive, type GameState } from '../game/engine'
 import { pauseGate } from '../tts/narrator'
 import { usePaused, useWakeLock } from './hooks'
 import { Button, Screen, Sheet } from './kit'
+import { MusicButton } from './music'
 import { Dawn, Discussion, Ended, Execution, Hunter, LastWords, NightRoleView, NightStart, Vote, type PhaseProps } from './phases'
 
 const isNight = (g: GameState) => g.phase.t === 'NIGHT_START' || g.phase.t === 'NIGHT_ROLE'
@@ -47,6 +48,7 @@ export function Play({
               {night ? `🌙 Đêm ${game.day}` : `☀️ Ngày ${game.day}`}
             </span>
             <div className="flex gap-2">
+              <MusicButton className="text-lg" />
               <button
                 onClick={() => pauseGate.set(true)}
                 className="rounded-full bg-panel px-4 py-2 text-lg"
