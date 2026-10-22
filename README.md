@@ -29,7 +29,13 @@ Các mốc thời gian, giọng đọc, tốc độ đọc và việc có công 
 
 ## Vai hiện có
 
-Dân làng, Ma Sói, Tiên tri, Bảo vệ, Phù thủy, Thợ săn.
+Đủ 14 vai của bộ bài Ma Sói gốc:
+
+- Dân làng, Ma Sói, Tiên tri, Bảo vệ, Phù thủy, Thợ săn
+- Cupid, Cô bé, Ăn trộm, Già làng, Thằng ngốc, Kẻ thế mạng, Thổi sáo
+- Trưởng làng: chức danh được bầu, bật trong màn hình thiết lập
+
+Luật chi tiết: `docs/superpowers/specs/2026-10-22-14-vai-design.md`.
 
 ## Giọng đọc
 

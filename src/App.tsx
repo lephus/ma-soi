@@ -43,8 +43,8 @@ export function App() {
         <Setup
           voice={settings.voice}
           onOpenSettings={() => setShowSettings(true)}
-          onStart={(names, counts) => {
-            dispatch({ type: 'new', game: createGame(names, counts) })
+          onStart={(names, counts, options) => {
+            dispatch({ type: 'new', game: createGame(names, counts, options) })
             setResumed(true)
           }}
           resume={game && unfinished ? { onResume: () => setResumed(true), onDiscard: exit } : undefined}

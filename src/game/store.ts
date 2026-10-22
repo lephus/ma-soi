@@ -1,5 +1,5 @@
 import { useEffect, useReducer } from 'react'
-import type { GameState } from './engine'
+import { GAME_VERSION, type GameState } from './engine'
 
 /** 'deal' while players pass the phone to see their cards, 'play' once the first night starts. */
 export type Stage = 'deal' | 'play'
@@ -62,7 +62,7 @@ function load(): Store {
     const raw = localStorage.getItem(KEY)
     if (!raw) return empty
     const saved = JSON.parse(raw) as Store
-    if (saved.game?.version !== 1) return empty
+    if (saved.game?.version !== GAME_VERSION) return empty
     return { ...empty, ...saved }
   } catch {
     return empty

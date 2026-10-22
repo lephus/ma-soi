@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { CONFIGURABLE_ROLES, ROLES, suggestRoles, validateSetup, type RoleCounts } from '../game/roles'
+import type { GameOptions } from '../game/engine'
+import { CONFIGURABLE_ROLES, ROLES, deckSize, suggestRoles, validateSetup, type RoleCounts } from '../game/roles'
 import { loadNames, saveNames } from '../game/store'
 import type { NarratorVoice } from '../tts/narrator'
 import { Button, Screen } from './kit'
@@ -13,13 +14,14 @@ export function Setup({
   resume,
 }: {
   voice: NarratorVoice
-  onStart: (names: string[], counts: RoleCounts) => void
+  onStart: (names: string[], counts: RoleCounts, options: GameOptions) => void
   onOpenSettings: () => void
   resume?: { onResume: () => void; onDiscard: () => void }
 }) {
   const [names, setNames] = useState<string[]>(loadNames)
   const [draft, setDraft] = useState('')
   const [counts, setCounts] = useState<RoleCounts>(() => suggestRoles(Math.max(names.length, 4)))
+  const [electSheriff, setElectSheriff] = useState(false)
 
   const updateNames = (next: string[]) => {
     setNames(next)
@@ -36,7 +38,7 @@ export function Setup({
   }
 
   const specials = CONFIGURABLE_ROLES.reduce((sum, r) => sum + (counts[r] ?? 0), 0)
-  const villagers = names.length - specials
+  const villagers = deckSize(counts, names.length) - specials
   const error = validateSetup(counts, names.length)
 
   const change = (role: (typeof CONFIGURABLE_ROLES)[number], delta: number) => {
@@ -145,11 +147,31 @@ export function Setup({
           <span className="flex-1 font-semibold">{ROLES.VILLAGER.nameVi}</span>
           <span className="w-24 text-center text-lg font-bold">{Math.max(0, villagers)}</span>
         </div>
+        {counts.THIEF ? (
+          <p className="text-center text-xs text-muted">Có Ăn trộm nên bộ bài có thêm 2 lá thừa, không ai cầm.</p>
+        ) : null}
+        <label className="flex items-center gap-3 rounded-2xl bg-panel px-4 py-3">
+          <span className="text-2xl" aria-hidden>
+            👑
+          </span>
+          <span className="flex-1">
+            <span className="block font-semibold">Bầu Trưởng làng</span>
+            <span className="block text-xs text-muted">
+              Sáng ngày đầu cả làng bầu Trưởng làng, phiếu của Trưởng làng tính gấp đôi. Khi chết được chọn người kế nhiệm.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={electSheriff}
+            onChange={(e) => setElectSheriff(e.target.checked)}
+            className="h-6 w-6 accent-violet-500"
+          />
+        </label>
       </section>
 
       <div className="sticky bottom-0 mt-auto flex flex-col gap-2 bg-night pt-2">
         {error && <p className="text-center text-sm text-day">{error}</p>}
-        <Button disabled={!!error} onClick={() => onStart(names, counts)}>
+        <Button disabled={!!error} onClick={() => onStart(names, counts, { electSheriff })}>
           Chia bài
         </Button>
       </div>

@@ -2,23 +2,31 @@ import { useEffect, useRef, useState } from 'react'
 import {
   act,
   advance,
+  chooseSheriff,
+  hasScapegoatCard,
   hunterShoot,
   hunterTargets,
   isRealWake,
+  loverOf,
   nameOf,
   nightTargets,
   playerById,
+  scapegoatChoose,
+  thiefMustTake,
+  todaysVoters,
   vote,
+  voteTargets,
+  voteTie,
   alivePlayers,
   type Death,
   type GameState,
 } from '../game/engine'
-import { ROLES, type NightRole } from '../game/roles'
+import { ROLES, type NightStep, type Winner } from '../game/roles'
 import * as script from '../game/script'
 import type { Settings } from '../game/settings'
 import { beep, speak } from '../tts/narrator'
 import { formatClock, useCountdown, useScript, type Countdown } from './hooks'
-import { BigTitle, Button, Caption, PlayerPicker } from './kit'
+import { BigTitle, Button, Caption, MultiPlayerPicker, PlayerPicker } from './kit'
 
 export interface PhaseProps {
   game: GameState
@@ -60,13 +68,20 @@ export function NightStart({ game, settings, apply }: PhaseProps) {
   )
 }
 
-const ROLE_ACTION: Record<Exclude<NightRole, 'WITCH'>, { title: string; confirm: string; skip: string }> = {
+const ROLE_ACTION: Record<'SEER' | 'GUARD' | 'WEREWOLF', { title: string; confirm: string; skip: string }> = {
   SEER: { title: 'Chọn một người để soi', confirm: 'Soi người này', skip: 'Không soi ai' },
   GUARD: { title: 'Chọn một người để bảo vệ', confirm: 'Bảo vệ người này', skip: 'Không bảo vệ ai' },
   WEREWOLF: { title: 'Chọn một người để cắn', confirm: 'Cắn người này', skip: 'Không cắn ai' },
 }
 
-export function NightRoleView({ game, settings, apply, role }: PhaseProps & { role: NightRole }) {
+/** Title and icon of a night step; LOVERS and CHARMED are not cards. */
+function stepInfo(step: NightStep): { icon: string; title: string } {
+  if (step === 'LOVERS') return { icon: '💞', title: 'Cặp đôi' }
+  if (step === 'CHARMED') return { icon: '🎶', title: 'Người bị thôi miên' }
+  return { icon: ROLES[step].icon, title: ROLES[step].nameVi }
+}
+
+export function NightRoleView({ game, settings, apply, role }: PhaseProps & { role: NightStep }) {
   // Decided once when the role is called: does someone actually hold the phone now?
   const [real] = useState(() => isRealWake(game, role))
   const [stage, setStage] = useState<'wake' | 'act' | 'result' | 'sleep'>('wake')
@@ -88,10 +103,10 @@ export function NightRoleView({ game, settings, apply, role }: PhaseProps & { ro
     apply(advance)
   })
 
-  const info = ROLES[role]
-  const title = role === 'WEREWOLF' ? 'Ma Sói' : info.nameVi
+  const info = stepInfo(role)
+  const title = info.title
 
-  if (stage === 'act' && real) {
+  if (stage === 'act' && real && role !== 'LOVERS' && role !== 'CHARMED') {
     if (role === 'WITCH') {
       return (
         <WitchPanel
@@ -101,6 +116,42 @@ export function NightRoleView({ game, settings, apply, role }: PhaseProps & { ro
             step.done()
           }}
         />
+      )
+    }
+    if (role === 'THIEF') {
+      return (
+        <ThiefPanel
+          game={game}
+          onConfirm={(take) => {
+            apply((s) => act(s, { role: 'THIEF', take }))
+            step.done()
+          }}
+        />
+      )
+    }
+    if (role === 'CUPID' || role === 'PIPER') {
+      const targets = nightTargets(game, role)
+      const count = role === 'CUPID' ? 2 : Math.min(2, targets.length)
+      return (
+        <>
+          <BigTitle
+            icon={info.icon}
+            title={title}
+            subtitle={role === 'CUPID' ? 'Chọn hai người làm cặp đôi (được chọn cả mình)' : 'Chọn hai người để thôi miên'}
+          />
+          <MultiPlayerPicker
+            players={targets}
+            min={count}
+            max={count}
+            confirmLabel={role === 'CUPID' ? 'Ghép đôi' : 'Thôi miên'}
+            onConfirm={(ids) => {
+              apply((s) =>
+                act(s, role === 'CUPID' ? { role, lovers: [ids[0], ids[1]] } : { role, targets: ids }),
+              )
+              step.done()
+            }}
+          />
+        </>
       )
     }
     const text = ROLE_ACTION[role]
@@ -212,6 +263,27 @@ function WitchPanel({ game, onConfirm }: { game: GameState; onConfirm: (heal: bo
   )
 }
 
+function ThiefPanel({ game, onConfirm }: { game: GameState; onConfirm: (take: number | null) => void }) {
+  const mustTake = thiefMustTake(game)
+  const options = game.leftover.map((role, i) => ({ id: String(i), label: `${ROLES[role].icon} Lấy vai ${ROLES[role].nameVi}` }))
+  return (
+    <>
+      <BigTitle
+        icon="🦝"
+        title="Ăn trộm"
+        subtitle={mustTake ? 'Cả hai lá đều là Ma Sói, bạn phải đổi lấy một lá' : 'Đổi lấy một trong hai lá thừa, hoặc giữ nguyên'}
+      />
+      <PlayerPicker
+        players={[]}
+        skipLabel={mustTake ? undefined : `${ROLES.THIEF.icon} Giữ nguyên, làm Dân làng`}
+        extraOptions={options}
+        confirmLabel="Xác nhận"
+        onConfirm={(id) => onConfirm(id === null ? null : Number(id))}
+      />
+    </>
+  )
+}
+
 function DeathList({ game, deaths }: { game: GameState; deaths: string[] }) {
   if (deaths.length === 0) return <p className="text-center text-lg">Không ai chết 🕊️</p>
   return (
@@ -253,8 +325,10 @@ export function Hunter({ game, settings, apply, hunterId }: PhaseProps & { hunte
     await step.wait()
     setPicking(false)
     await wait(1)
-    // `game` here is from before the shot, which is fine: only names are read.
-    await say(script.hunterResultLines(game, shot.current, settings.revealRoleOnDeath))
+    // `game` here is from before the shot, which is fine: only names and roles are read.
+    const partner = loverOf(game, shot.current)
+    const grief = partner && playerById(game, partner)?.alive ? [partner] : []
+    await say(script.hunterResultLines(game, shot.current, grief, settings.revealRoleOnDeath))
     apply(advance)
   })
 
@@ -339,31 +413,40 @@ export function Discussion({ game, settings, apply }: PhaseProps) {
   )
 }
 
+const TIE = '__tie__'
+
 export function Vote({ game, settings, apply }: PhaseProps) {
   const [picking, setPicking] = useState(false)
+  const voters = todaysVoters(game)
   const { countdown, caption } = useTimedStep(
     settings.voteSeconds,
-    script.voteLines(settings.voteSeconds),
+    script.voteLines(settings.voteSeconds, voters?.map((p) => p.name) ?? null),
     script.voteEndLines,
     () => setPicking(true),
   )
   if (picking) {
+    const scapegoat = hasScapegoatCard(game)
     return (
       <>
         <BigTitle icon="⚖️" title="Kết quả bỏ phiếu" subtitle="Ai bị cả làng treo cổ?" />
         <PlayerPicker
-          players={alivePlayers(game)}
-          confirmLabel="Treo cổ người này"
-          skipLabel="Không treo ai (hoà phiếu hoặc bỏ qua)"
+          players={voteTargets(game)}
+          confirmLabel="Xác nhận"
+          skipLabel={scapegoat ? 'Không treo ai' : 'Không treo ai (hoà phiếu hoặc bỏ qua)'}
+          extraOptions={scapegoat ? [{ id: TIE, label: `${ROLES.SCAPEGOAT.icon} Hoà phiếu` }] : []}
           tone="day"
-          onConfirm={(target) => apply((s) => vote(s, target))}
+          onConfirm={(target) => apply((s) => (target === TIE ? voteTie(s) : vote(s, target)))}
         />
       </>
     )
   }
   return (
     <>
-      <BigTitle icon="✋" title="Bỏ phiếu" subtitle="Giơ tay chỉ vào người bạn nghi là Sói" />
+      <BigTitle
+        icon="✋"
+        title="Bỏ phiếu"
+        subtitle={voters ? `Chỉ ${voters.map((p) => p.name).join(', ')} được bỏ phiếu` : 'Giơ tay chỉ vào người bạn nghi là Sói'}
+      />
       <Timer label="Thời gian bỏ phiếu" countdown={countdown} />
       <div className="mt-6">
         <Caption text={caption} />
@@ -372,9 +455,9 @@ export function Vote({ game, settings, apply }: PhaseProps) {
   )
 }
 
-export function LastWords({ game, settings, apply, targetId }: PhaseProps & { targetId: string }) {
+export function LastWords({ game, settings, apply, targetId, tie }: PhaseProps & { targetId: string; tie: boolean }) {
   if (settings.lastWordsSeconds === 0) return <SkipPhase apply={apply} />
-  return <LastWordsTimer game={game} settings={settings} apply={apply} targetId={targetId} />
+  return <LastWordsTimer game={game} settings={settings} apply={apply} targetId={targetId} tie={tie} />
 }
 
 function SkipPhase({ apply }: Pick<PhaseProps, 'apply'>) {
@@ -382,10 +465,10 @@ function SkipPhase({ apply }: Pick<PhaseProps, 'apply'>) {
   return null
 }
 
-function LastWordsTimer({ game, settings, apply, targetId }: PhaseProps & { targetId: string }) {
+function LastWordsTimer({ game, settings, apply, targetId, tie }: PhaseProps & { targetId: string; tie: boolean }) {
   const { countdown, caption } = useTimedStep(
     settings.lastWordsSeconds,
-    script.lastWordsLines(game, targetId, settings.lastWordsSeconds),
+    script.lastWordsLines(game, targetId, settings.lastWordsSeconds, tie),
     [],
     () => apply(advance),
   )
@@ -400,16 +483,29 @@ function LastWordsTimer({ game, settings, apply, targetId }: PhaseProps & { targ
   )
 }
 
-export function Execution({ game, settings, apply, targetId }: PhaseProps & { targetId: string | null }) {
+export function Execution({
+  game,
+  settings,
+  apply,
+  targetId,
+  spared,
+  grief,
+}: PhaseProps & { targetId: string | null; spared: boolean; grief: string[] }) {
   const caption = useScript(async ({ say, wait }) => {
-    await say(script.executionLines(game, targetId, settings.revealRoleOnDeath))
+    await say(script.executionLines(game, targetId, settings.revealRoleOnDeath, { spared, grief }))
     await wait(1)
     apply(advance)
   })
   return (
     <>
       <BigTitle icon="⚖️" title="Phán quyết" />
-      <DeathList game={game} deaths={targetId ? [targetId] : []} />
+      {spared ? (
+        <p className="rounded-2xl border border-day/40 bg-day/10 px-4 py-3 text-center text-lg font-semibold">
+          {ROLES.IDIOT.icon} {nameOf(game, targetId)} là Thằng ngốc, được tha
+        </p>
+      ) : (
+        <DeathList game={game} deaths={targetId ? [targetId, ...grief] : []} />
+      )}
       <div className="mt-4">
         <Caption text={caption} />
       </div>
@@ -417,7 +513,153 @@ export function Execution({ game, settings, apply, targetId }: PhaseProps & { ta
   )
 }
 
-export function Ended({ game, winner, onExit }: Pick<PhaseProps, 'game'> & { winner: 'WOLF' | 'VILLAGE'; onExit: () => void }) {
+/** Speaks a result once, then moves on; mounted after a choice so the narration runs exactly once. */
+function Announce({ lines, onDone }: { lines: script.Line[]; onDone: () => void }) {
+  const caption = useScript(async ({ say, wait }) => {
+    await say(lines)
+    await wait(1)
+    onDone()
+  })
+  return <Caption text={caption} />
+}
+
+export function SheriffElection({ game, settings, apply, chosen }: PhaseProps & { chosen: string | null | undefined }) {
+  const [picking, setPicking] = useState(false)
+  const { countdown, caption } = useTimedStep(
+    settings.voteSeconds,
+    script.sheriffElectionLines(settings.voteSeconds),
+    script.sheriffElectionEndLines,
+    () => setPicking(true),
+  )
+  if (chosen !== undefined) {
+    return (
+      <>
+        <BigTitle icon="👑" title={chosen ? nameOf(game, chosen) : 'Không có Trưởng làng'} subtitle="Trưởng làng" />
+        <Announce lines={script.sheriffResultLines(game, chosen)} onDone={() => apply(advance)} />
+      </>
+    )
+  }
+  if (picking) {
+    return (
+      <>
+        <BigTitle icon="👑" title="Bầu Trưởng làng" subtitle="Ai được nhiều phiếu nhất?" />
+        <PlayerPicker
+          players={alivePlayers(game)}
+          confirmLabel="Chọn làm Trưởng làng"
+          skipLabel="Không bầu ai"
+          tone="day"
+          onConfirm={(id) => apply((s) => chooseSheriff(s, id))}
+        />
+      </>
+    )
+  }
+  return (
+    <>
+      <BigTitle icon="👑" title="Bầu Trưởng làng" subtitle="Phiếu của Trưởng làng được tính gấp đôi" />
+      <Timer label="Thời gian bầu" countdown={countdown} />
+      <div className="mt-6">
+        <Caption text={caption} />
+      </div>
+    </>
+  )
+}
+
+export function SheriffSuccessor({
+  game,
+  apply,
+  formerId,
+  chosen,
+}: PhaseProps & { formerId: string; chosen: string | null | undefined }) {
+  const [picking, setPicking] = useState(false)
+  const caption = useScript(async ({ say }) => {
+    await say(script.sheriffSuccessorLines(game, formerId))
+    setPicking(true)
+  })
+  if (chosen !== undefined) {
+    return (
+      <>
+        <BigTitle icon="👑" title={chosen ? nameOf(game, chosen) : 'Không có Trưởng làng'} subtitle="Trưởng làng mới" />
+        <Announce lines={script.sheriffResultLines(game, chosen)} onDone={() => apply(advance)} />
+      </>
+    )
+  }
+  if (picking) {
+    return (
+      <>
+        <BigTitle icon="👑" title={nameOf(game, formerId)} subtitle="Chọn người kế nhiệm Trưởng làng" />
+        <PlayerPicker
+          players={alivePlayers(game)}
+          confirmLabel="Trao chức Trưởng làng"
+          skipLabel="Không trao cho ai"
+          tone="day"
+          onConfirm={(id) => apply((s) => chooseSheriff(s, id))}
+        />
+      </>
+    )
+  }
+  return (
+    <>
+      <BigTitle icon="👑" title="Trưởng làng đã chết" subtitle={nameOf(game, formerId)} />
+      <Caption text={caption} />
+    </>
+  )
+}
+
+export function Scapegoat({
+  game,
+  apply,
+  scapegoatId,
+  chosen,
+}: PhaseProps & { scapegoatId: string; chosen: string[] | undefined }) {
+  const [picking, setPicking] = useState(false)
+  const caption = useScript(async ({ say }) => {
+    await say(script.scapegoatLines(game, scapegoatId))
+    setPicking(true)
+  })
+  const alive = alivePlayers(game)
+  if (chosen !== undefined) {
+    return (
+      <>
+        <BigTitle icon={ROLES.SCAPEGOAT.icon} title="Ngày mai được bỏ phiếu" subtitle={chosen.map((id) => nameOf(game, id)).join(', ')} />
+        <Announce lines={script.scapegoatResultLines(game, chosen)} onDone={() => apply(advance)} />
+      </>
+    )
+  }
+  if (picking) {
+    return (
+      <>
+        <BigTitle icon={ROLES.SCAPEGOAT.icon} title={nameOf(game, scapegoatId)} subtitle="Chọn những người được bỏ phiếu ngày mai" />
+        <MultiPlayerPicker
+          players={alive}
+          min={Math.min(1, alive.length)}
+          max={alive.length}
+          confirmLabel="Xác nhận"
+          onConfirm={(ids) => apply((s) => scapegoatChoose(s, ids))}
+        />
+      </>
+    )
+  }
+  return (
+    <>
+      <BigTitle icon={ROLES.SCAPEGOAT.icon} title="Kẻ thế mạng" subtitle={nameOf(game, scapegoatId)} />
+      <Caption text={caption} />
+    </>
+  )
+}
+
+const WINNER_TITLE: Record<Winner, { icon: string; title: string }> = {
+  WOLF: { icon: '🐺', title: 'Phe Ma Sói thắng!' },
+  VILLAGE: { icon: '🏡', title: 'Phe Dân Làng thắng!' },
+  PIPER: { icon: '🪈', title: 'Thổi sáo thắng!' },
+  LOVERS: { icon: '💞', title: 'Cặp đôi thắng!' },
+}
+
+/** Small markers on the final reveal: who was in love, who was charmed. */
+function badges(game: GameState, id: string): string {
+  return `${game.lovers?.includes(id) ? ' 💘' : ''}${game.charmed.includes(id) ? ' 🎶' : ''}${game.sheriff === id ? ' 👑' : ''}`
+}
+
+export function Ended({ game, winner, onExit }: Pick<PhaseProps, 'game'> & { winner: Winner; onExit: () => void }) {
   const caption = useScript(async ({ say }) => {
     beep(3)
     await say(script.endLines(winner))
@@ -425,8 +667,8 @@ export function Ended({ game, winner, onExit }: Pick<PhaseProps, 'game'> & { win
   return (
     <div className="flex flex-col gap-4">
       <BigTitle
-        icon={winner === 'WOLF' ? '🐺' : '🏡'}
-        title={winner === 'WOLF' ? 'Phe Ma Sói thắng!' : 'Phe Dân Làng thắng!'}
+        icon={WINNER_TITLE[winner].icon}
+        title={WINNER_TITLE[winner].title}
         subtitle="Trò chơi kết thúc"
       />
       <Caption text={caption} />
@@ -439,6 +681,7 @@ export function Ended({ game, winner, onExit }: Pick<PhaseProps, 'game'> & { win
             <span className="block font-semibold">
               {p.alive ? '' : '💀 '}
               {p.name}
+              {badges(game, p.id)}
             </span>
             <span className="text-sm">
               {ROLES[p.role].icon} {ROLES[p.role].nameVi}

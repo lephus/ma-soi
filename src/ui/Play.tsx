@@ -1,10 +1,24 @@
 import { useEffect, useState } from 'react'
-import { setAlive, type GameState } from '../game/engine'
+import { playerById, setAlive, type GameState } from '../game/engine'
 import { pauseGate } from '../tts/narrator'
 import { usePaused, useWakeLock } from './hooks'
 import { Button, Screen, Sheet } from './kit'
 import { MusicButton } from './music'
-import { Dawn, Discussion, Ended, Execution, Hunter, LastWords, NightRoleView, NightStart, Vote, type PhaseProps } from './phases'
+import {
+  Dawn,
+  Discussion,
+  Ended,
+  Execution,
+  Hunter,
+  LastWords,
+  NightRoleView,
+  NightStart,
+  Scapegoat,
+  SheriffElection,
+  SheriffSuccessor,
+  Vote,
+  type PhaseProps,
+} from './phases'
 
 const isNight = (g: GameState) => g.phase.t === 'NIGHT_START' || g.phase.t === 'NIGHT_ROLE'
 
@@ -38,6 +52,7 @@ export function Play({
 
   const ended = game.phase.t === 'ENDED'
   const night = isNight(game)
+  const sheriff = playerById(game, game.sheriff)
 
   return (
     <div className={`min-h-dvh transition-colors duration-700 ${night ? 'bg-night' : 'bg-[#2a2140]'}`}>
@@ -46,6 +61,7 @@ export function Play({
           <header className="flex items-center justify-between">
             <span className={`rounded-full px-3 py-1 text-sm font-semibold ${night ? 'bg-panel text-muted' : 'bg-day/20 text-day'}`}>
               {night ? `🌙 Đêm ${game.day}` : `☀️ Ngày ${game.day}`}
+              {!night && sheriff?.alive && ` · 👑 ${sheriff.name}`}
             </span>
             <div className="flex gap-2">
               <MusicButton className="text-lg" />
@@ -123,10 +139,16 @@ function PhaseView({ game, settings, apply, onExit }: PhaseProps & { onExit: () 
       return <Discussion {...props} />
     case 'VOTE':
       return <Vote {...props} />
+    case 'SHERIFF_ELECTION':
+      return <SheriffElection {...props} chosen={phase.chosen} />
+    case 'SHERIFF_SUCCESSOR':
+      return <SheriffSuccessor {...props} formerId={phase.formerId} chosen={phase.chosen} />
     case 'LAST_WORDS':
-      return <LastWords {...props} targetId={phase.targetId} />
+      return <LastWords {...props} targetId={phase.targetId} tie={!!phase.tie} />
     case 'EXECUTION':
-      return <Execution {...props} targetId={phase.targetId} />
+      return <Execution {...props} targetId={phase.targetId} spared={!!phase.spared} grief={phase.grief ?? []} />
+    case 'SCAPEGOAT':
+      return <Scapegoat {...props} scapegoatId={phase.scapegoatId} chosen={phase.chosen} />
     case 'ENDED':
       return <Ended game={game} winner={phase.winner} onExit={onExit} />
   }

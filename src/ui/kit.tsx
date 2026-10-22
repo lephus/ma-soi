@@ -54,6 +54,8 @@ export interface PickerProps {
   confirmLabel: string
   /** Offered as an extra choice, e.g. "Không cắn ai". */
   skipLabel?: string
+  /** More non-player choices, e.g. "Hoà phiếu"; `onConfirm` receives the option's id. */
+  extraOptions?: { id: string; label: string }[]
   onConfirm: (id: string | null) => void
   tone?: Variant
 }
@@ -61,7 +63,7 @@ export interface PickerProps {
 const SKIP = '__skip__'
 
 /** Tap a player, then confirm, so a stray tap in the dark doesn't count. */
-export function PlayerPicker({ players, confirmLabel, skipLabel, onConfirm, tone = 'primary' }: PickerProps) {
+export function PlayerPicker({ players, confirmLabel, skipLabel, extraOptions = [], onConfirm, tone = 'primary' }: PickerProps) {
   const [selected, setSelected] = useState<string | null>(null)
   return (
     <div className="flex flex-1 flex-col gap-4">
@@ -87,6 +89,17 @@ export function PlayerPicker({ players, confirmLabel, skipLabel, onConfirm, tone
             {skipLabel}
           </button>
         )}
+        {extraOptions.map((o) => (
+          <button
+            key={o.id}
+            onClick={() => setSelected(o.id)}
+            className={`col-span-2 rounded-2xl border-2 border-dashed px-3 py-3 font-semibold ${
+              selected === o.id ? 'border-accent bg-accent/25' : 'border-line text-muted'
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
       </div>
       <Button
         variant={tone}
@@ -95,6 +108,53 @@ export function PlayerPicker({ players, confirmLabel, skipLabel, onConfirm, tone
         onClick={() => selected && onConfirm(selected === SKIP ? null : selected)}
       >
         {confirmLabel}
+      </Button>
+    </div>
+  )
+}
+
+/** Pick between `min` and `max` players, then confirm. */
+export function MultiPlayerPicker({
+  players,
+  min,
+  max,
+  confirmLabel,
+  onConfirm,
+  tone = 'primary',
+}: {
+  players: Player[]
+  min: number
+  max: number
+  confirmLabel: string
+  onConfirm: (ids: string[]) => void
+  tone?: Variant
+}) {
+  const [selected, setSelected] = useState<string[]>([])
+  const toggle = (id: string) =>
+    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : s.length < max ? [...s, id] : s))
+  return (
+    <div className="flex flex-1 flex-col gap-4">
+      <div className="grid grid-cols-2 gap-3">
+        {players.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => toggle(p.id)}
+            className={`rounded-2xl border-2 px-3 py-4 text-lg font-semibold break-words ${
+              selected.includes(p.id) ? 'border-accent bg-accent/25' : 'border-line bg-panel'
+            }`}
+          >
+            {selected.includes(p.id) ? '✓ ' : ''}
+            {p.name}
+          </button>
+        ))}
+      </div>
+      <Button
+        variant={tone}
+        className="mt-auto"
+        disabled={selected.length < min}
+        onClick={() => onConfirm(selected)}
+      >
+        {confirmLabel} ({selected.length}/{max})
       </Button>
     </div>
   )
